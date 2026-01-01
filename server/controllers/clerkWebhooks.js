@@ -1,53 +1,42 @@
-import User from ".../models/User.js";
-import {Webhook} from "svix";
+import User from "../models/User.js";
+import { Webhook } from "svix";
 
-const clerkWebhooks = async(req,res) =>{
-     try {
-        // Create a svix instance using clerk webhook secret
-        const whook = new Webhook(process.env.CLERK_WEBHOOK_SECRET)
-        // Getting headers
-        const headers = {
-            "svix-id":req.headers["svix-id"],
-            "svix-timestamps":req.headers["svix-timestamps"],
-            "svix-signature":req.headers["svix-signature"],
-        };
-        // Verifying headers
+export const clerkWebhooks = async (req, res) => {
+  try {
+    const whook = new Webhook(process.env.CLERK_WEBHOOK_SECRET);
 
-        await whook.verify(JSON.stringify(req.body), headers);
-        // Getting data from the req body
+    const payload = whook.verify(
+      JSON.stringify(req.body),
+      {
+        "svix-id": req.headers["svix-id"],
+        "svix-timestamp": req.headers["svix-timestamp"],
+        "svix-signature": req.headers["svix-signature"]
+      }
+    );
 
-        const {data,type} = req.body;
-        const userData = {
-            _id : data._id,
-            email: data.email_addresses[0].email_address,
-            username: data.first_name + " " + data.last_name,
-            image: data.image_url
-        };
-        // Switch cases for different events
+    const event = payload;
 
-        switch (type) {
-            case "user.created":
-                 await User.create(userData);
-                break;
+    if (event.type === "user.created") {
+      const { id, email_addresses, image_url, username } = event.data;
 
-                case "user.updated":
-                 await User.findByIdAndUpdate(data.id, userData);
-                break;
+      await User.create({
+        _id: id,
+        username: username || "NoName",
+        email: email_addresses?.[0]?.email_address || "noemail@example.com",
+        image: image_url,
+        role: "user",
+        recentSearchedCities: []
+      });
+    }
 
-                case "user.deleted":
-                 await User.findByIdAndDelete(data.id);
-                break;
-        
-            default:
-                break;
-        }
+    res.json({ success: true });
 
-        res.JSON({success: true, message: "Webhook Recieved"})
-
-     } catch (error) {
-        console.log(error.message);
-        res.JSON({success: false, message: error.message})
-     }
-}
+  } catch (error) {
+    console.log("Webhook error:", error);
+    console.log("Payload:", req.body);
+    console.log("Headers:", req.headers);
+    res.status(400).json({ success: false });
+  }
+};
 
 export default clerkWebhooks;
